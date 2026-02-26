@@ -1189,3 +1189,227 @@ pub async fn run_proxy() {
         "[STOP]".magenta().bold()
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ================================================================
+    // shorten_script_url
+    // ================================================================
+
+    #[test]
+    fn shorten_full_faceplate_path() {
+        let url = "/screen_modules/Screen_Content/HMI_RT_1::HMI_Screen/faceplate_modules/CM_Freq/Events.js";
+        assert_eq!(
+            shorten_script_url(url),
+            Some("HMI_Screen/CM_Freq/Events.js".to_string())
+        );
+    }
+
+    #[test]
+    fn shorten_single_colon_path() {
+        let url = "/screen_modules/Screen_Content/HMI_RT_1:HMI_Screen/Dynamics.js";
+        assert_eq!(
+            shorten_script_url(url),
+            Some("HMI_Screen/Dynamics.js".to_string())
+        );
+    }
+
+    #[test]
+    fn shorten_no_faceplate_modules() {
+        let url = "/screen_modules/Screen_Content/HMI_RT_1::HMI_Screen/Dynamics.js";
+        assert_eq!(
+            shorten_script_url(url),
+            Some("HMI_Screen/Dynamics.js".to_string())
+        );
+    }
+
+    #[test]
+    fn shorten_no_leading_slash() {
+        let url = "screen_modules/Screen_Content/HMI_RT_1::HMI_Screen/Events.js";
+        assert_eq!(
+            shorten_script_url(url),
+            Some("HMI_Screen/Events.js".to_string())
+        );
+    }
+
+    #[test]
+    fn shorten_unrelated_url_returns_none() {
+        assert_eq!(shorten_script_url("https://example.com/foo.js"), None);
+        assert_eq!(shorten_script_url("eval-123.cdp"), None);
+    }
+
+    // ================================================================
+    // extract_vcs_number
+    // ================================================================
+
+    #[test]
+    fn extract_vcs_from_typical_title() {
+        assert_eq!(
+            extract_vcs_number(" @localhost VCS_8 Dynamics"),
+            Some(8)
+        );
+    }
+
+    #[test]
+    fn extract_vcs_large_number() {
+        assert_eq!(extract_vcs_number("VCS_123 Events"), Some(123));
+    }
+
+    #[test]
+    fn extract_vcs_missing() {
+        assert_eq!(extract_vcs_number("no vcs here"), None);
+    }
+
+    // ================================================================
+    // check_target_change
+    // ================================================================
+
+    fn make_target(ws_url: &str, title: &str) -> DebugTarget {
+        DebugTarget {
+            description: String::new(),
+            devtools_frontend_url: String::new(),
+            id: "1".to_string(),
+            title: title.to_string(),
+            target_type: "page".to_string(),
+            url: String::new(),
+            web_socket_debugger_url: ws_url.to_string(),
+        }
+    }
+
+    #[test]
+    fn check_target_change_result_none() {
+        let change = check_target_change(None, &Some("old".into()), "Dynamics", 0);
+        assert!(matches!(change, TargetChange::None { vcs: 0 }));
+    }
+
+    #[test]
+    fn check_target_change_initial_discovery() {
+        let target = make_target("ws://host/abc123", "VCS_5 Dynamics");
+        let change = check_target_change(Some((target, 5)), &None, "Dynamics", 1);
+        assert!(matches!(change, TargetChange::Initial { ref path, vcs: 5 } if path == "abc123"));
+    }
+
+    #[test]
+    fn check_target_change_path_changed() {
+        let target = make_target("ws://host/new_path", "VCS_6 Dynamics");
+        let change = check_target_change(
+            Some((target, 6)),
+            &Some("old_path".into()),
+            "Dynamics",
+            1,
+        );
+        assert!(
+            matches!(change, TargetChange::Changed { ref old, ref new, vcs: 6 } if old == "old_path" && new == "new_path")
+        );
+    }
+
+    #[test]
+    fn check_target_change_same_path() {
+        let target = make_target("ws://host/same_path", "VCS_7 Dynamics");
+        let change = check_target_change(
+            Some((target, 7)),
+            &Some("same_path".into()),
+            "Dynamics",
+            1,
+        );
+        assert!(matches!(change, TargetChange::None { vcs: 7 }));
+    }
+
+    // ================================================================
+    // ScriptDumper::handle_script_parsed
+    // ================================================================
+
+    fn make_dumper() -> ScriptDumper {
+        ScriptDumper::new("_test_dump".to_string(), "Dynamics")
+    }
+
+    #[test]
+    fn handle_script_parsed_valid_event() {
+        let mut dumper = make_dumper();
+        let event = serde_json::json!({
+            "method": "Debugger.scriptParsed",
+            "params": {
+                "scriptId": "42",
+                "url": "/screen_modules/Screen_Content/HMI_RT_1::HMI_Screen/Dynamics.js"
+            }
+        });
+        let result = dumper.handle_script_parsed(&event);
+        assert!(result.is_some());
+        let req: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(req["method"], "Debugger.getScriptSource");
+        assert_eq!(req["params"]["scriptId"], "42");
+        assert_eq!(req["id"], 900_000);
+    }
+
+    #[test]
+    fn handle_script_parsed_eval_cdp_skipped() {
+        let mut dumper = make_dumper();
+        let event = serde_json::json!({
+            "method": "Debugger.scriptParsed",
+            "params": { "scriptId": "99", "url": "eval-abc.cdp" }
+        });
+        assert!(dumper.handle_script_parsed(&event).is_none());
+    }
+
+    #[test]
+    fn handle_script_parsed_empty_url_skipped() {
+        let mut dumper = make_dumper();
+        let event = serde_json::json!({
+            "method": "Debugger.scriptParsed",
+            "params": { "scriptId": "99", "url": "" }
+        });
+        assert!(dumper.handle_script_parsed(&event).is_none());
+    }
+
+    #[test]
+    fn handle_script_parsed_wrong_method() {
+        let mut dumper = make_dumper();
+        let event = serde_json::json!({
+            "method": "Debugger.paused",
+            "params": { "scriptId": "1", "url": "foo.js" }
+        });
+        assert!(dumper.handle_script_parsed(&event).is_none());
+    }
+
+    // ================================================================
+    // ScriptDumper::handle_response
+    // ================================================================
+
+    #[test]
+    fn handle_response_matching_id_consumed() {
+        use crate::config::{Configuration, CONFIG};
+        let _ = CONFIG.set(Configuration::default());
+
+        let tmp = std::env::temp_dir().join("wincc_test_dump");
+        let mut dumper = ScriptDumper::new(tmp.to_string_lossy().to_string(), "Dynamics");
+
+        // Insert a pending entry manually
+        dumper.pending.insert(900_000, format!("{}/Dynamics/test.js", tmp.display()));
+
+        let response = serde_json::json!({
+            "id": 900_000,
+            "result": { "scriptSource": "console.log('hello');" }
+        });
+        assert!(dumper.handle_response(&response));
+        assert!(dumper.pending.is_empty());
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn handle_response_unknown_id_not_consumed() {
+        let mut dumper = make_dumper();
+        let response = serde_json::json!({ "id": 999_999, "result": {} });
+        assert!(!dumper.handle_response(&response));
+    }
+
+    #[test]
+    fn handle_response_no_id_field() {
+        let mut dumper = make_dumper();
+        let msg = serde_json::json!({ "method": "Debugger.paused" });
+        assert!(!dumper.handle_response(&msg));
+    }
+}
