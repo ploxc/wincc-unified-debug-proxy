@@ -131,23 +131,22 @@ fn maybe_rewrite_cdp_message(text: &str) -> String {
     }
 
     // Try to rewrite params.url
-    if let Some(params) = parsed.get_mut("params") {
-        if let Some(url_val) = params.get("url") {
-            if let Some(url_str) = url_val.as_str() {
-                if let Some(short) = shorten_script_url(url_str) {
-                    log_verbose(&format!("Rewrote script URL: {} -> {}", url_str, short));
-                    params.as_object_mut().unwrap().insert(
-                        "url".to_string(),
-                        serde_json::Value::String(short),
-                    );
-                    // Re-serialize
-                    return serde_json::to_string(&parsed).unwrap_or_else(|_| text.to_string());
-                }
-            }
-        }
-    }
+    let Some(params) = parsed.get_mut("params") else {
+        return text.to_string();
+    };
+    let Some(url_str) = params.get("url").and_then(|v| v.as_str()) else {
+        return text.to_string();
+    };
+    let Some(short) = shorten_script_url(url_str) else {
+        return text.to_string();
+    };
 
-    text.to_string()
+    log_verbose(&format!("Rewrote script URL: {} -> {}", url_str, short));
+    params.as_object_mut().unwrap().insert(
+        "url".to_string(),
+        serde_json::Value::String(short),
+    );
+    serde_json::to_string(&parsed).unwrap_or_else(|_| text.to_string())
 }
 
 // ============================================================================
@@ -227,11 +226,6 @@ async fn select_best_target(
     }
 
     log_verbose(&format!("Selecting best {} target from {} candidates", target_type, candidates.len()));
-
-    if candidates.is_empty() {
-        log_error(&format!("No alive {} targets found!", target_type));
-        return None;
-    }
 
     // Select target with highest VCS number
     let best_target = candidates.into_iter()
