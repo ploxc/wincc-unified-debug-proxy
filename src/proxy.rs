@@ -1158,6 +1158,8 @@ pub async fn run_proxy() {
                 }
             }
         }
+        println!();
+        println!("   Start a VS Code debug session to trigger script dumping.");
     }
     println!();
     println!("Press {} to stop", "Ctrl+C".yellow().bold());

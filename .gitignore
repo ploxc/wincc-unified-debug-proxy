@@ -1,2 +1,8 @@
 /target
 .claude/
+
+# debug script output
+scripts
+
+# debug launch test
+launch.json
