@@ -1,103 +1,116 @@
 # WinCC Unified Debug Proxy
 
-Debug WinCC Unified JavaScript scripts in VS Code. The proxy sits between VS Code and the WinCC runtime debug server, handling automatic reconnection when scripts reload.
+Debug WinCC Unified JavaScript scripts in VS Code with automatic reconnection.
 
-## Quick Start
+**[Download the latest release](https://github.com/ploxc/wincc-unified-debug-proxy/releases/latest)**
 
-1. Download `wincc-unified-debug-proxy.exe` from the [latest release](https://github.com/ploxc/wincc-unified-debug-proxy/releases/latest) and place it somewhere on your PATH (or in your project folder).
+**[Read the documentation](https://ploxc.com/tools/debug-proxy/docs)**
 
-2. Create a VS Code debug configuration:
-   ```
-   wincc-unified-debug-proxy init
-   ```
+## The problem
 
-3. Start the proxy:
-   ```
-   wincc-unified-debug-proxy
-   ```
+- **Targets change constantly** — every screen reload, navigation, or runtime restart creates a new debug target. Your debugger disconnects and you have to manually reattach.
+- **`chrome://inspect` is slow** — the default workflow opens a new DevTools window on every reload, losing breakpoints and console history each time.
+- **Dynamics and Events are separate contexts** — WinCC runs property animations and event handlers in separate V8 contexts, requiring two independent debug sessions.
 
-4. In VS Code, open the **Run and Debug** panel and launch **WinCC:Dynamics**, **WinCC:Events**, or **WinCC:All**.
 
-## Commands
+## The solution
+
+The proxy sits between VS Code and the WinCC debug server. It runs two local WebSocket servers — one for Dynamics (port 9230) and one for Events (port 9231) — forwarding Chrome DevTools Protocol messages to WinCC on port 9222.
+
+It polls the WinCC `/json` endpoint to detect target changes. When a target changes, it tears down connections and restarts, forcing VS Code to automatically reconnect via `"restart": true` in the launch config.
+
+## Quick start
+
+**1. Generate VS Code debug configuration:**
+
+```
+./wincc-unified-debug-proxy.exe init
+```
+
+**2. Start the proxy:**
+
+```
+./wincc-unified-debug-proxy.exe run
+```
+
+**3. Debug:** open Run and Debug (`Ctrl+Shift+D`), pick **WinCC:Dynamics**, **WinCC:Events**, or **WinCC:All**, and press `F5`.
+
+## Features
+
+- **Auto reconnect** — detects target changes and forces VS Code to reconnect automatically
+- **Separate ports** — Dynamics (`:9230`) and Events (`:9231`) on independent proxy ports
+- **Auto session selection** — picks the most recent active debug target when multiple exist
+- **Script dump** — extract all runtime scripts to disk with `--dump` for backup, diffing, or AI-assisted review
+- **ESLint + IntelliSense** — type definitions and linting setup for dumped scripts (v17–v21)
+- **Remote debugging** — generate netsh port forwarding scripts with `generate`
+- **Path shortening** — rewrites verbose script URLs to readable paths (e.g. `HMI_Screen/CM_Freq/Events.js`)
+
+## CLI reference
 
 ### `run` (default)
 
 Starts the proxy. This is the default when no command is specified.
 
-| Flag | Long | Default | Description |
-|------|------|---------|-------------|
-| `-t` | `--target-host` | `localhost` | Target WinCC host address |
-| `-p` | `--target-port` | `9222` | Target WinCC debug port |
-| `-d` | `--dynamics-port` | `9230` | Local port for Dynamics proxy |
-| `-e` | `--events-port` | `9231` | Local port for Events proxy |
-| `-i` | `--poll-interval` | `1` | Poll interval in seconds |
-| `-v` | `--verbose` | off | Enable verbose logging |
-| `-V` | `--very-verbose` | off | Enable very verbose logging |
-| `-l` | `--long-paths` | off | Show full script paths instead of shortened ones |
-| | `--dump <DIR>` | off | Continuously dump runtime scripts to local files |
+```
+./wincc-unified-debug-proxy.exe run [OPTIONS]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-t, --target-host` | `localhost` | WinCC host address |
+| `-p, --target-port` | `9222` | WinCC debug port |
+| `-d, --dynamics-port` | `9230` | Local Dynamics proxy port |
+| `-e, --events-port` | `9231` | Local Events proxy port |
+| `-i, --poll-interval` | `1` | Target polling interval (seconds) |
+| `-l, --long-paths` | off | Show full script paths |
+| `-v, --verbose` | off | Verbose logging |
+| `-V, --very-verbose` | off | Per-message logging |
+| `--dump <dir>` | off | Dump runtime scripts to directory |
 
 ### `init`
 
 Creates `.vscode/launch.json` with debug configurations for Dynamics and Events.
 
-| Flag | Long | Default | Description |
-|------|------|---------|-------------|
-| `-o` | `--output` | `.` | Output directory |
-| `-d` | `--dynamics-port` | `9230` | Dynamics port (used in launch.json) |
-| `-e` | `--events-port` | `9231` | Events port (used in launch.json) |
+```
+./wincc-unified-debug-proxy.exe init [OPTIONS]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-o, --output` | `.` | Output directory |
+| `-d, --dynamics-port` | `9230` | Dynamics port in launch.json |
+| `-e, --events-port` | `9231` | Events port in launch.json |
 
 ### `generate`
 
-Creates `.bat` scripts that configure netsh port forwarding and firewall rules on the WinCC machine, needed for remote debugging.
-
-| Flag | Long | Default | Description |
-|------|------|---------|-------------|
-| `-a` | `--address` | *required* | IP address of the WinCC machine |
-| `-p` | `--port` | `9222` | WinCC debug port |
-| `-o` | `--output` | `.` | Output directory for .bat files |
-
-## Remote Debugging
-
-To debug a WinCC runtime on a different machine:
-
-1. Generate the setup scripts:
-   ```
-   wincc-unified-debug-proxy generate -a 192.168.1.100
-   ```
-
-2. Copy the generated `wincc-debug-setup-*.bat` to the WinCC machine and run it **as Administrator**. This creates netsh port forwarding and firewall rules so the debug port is accessible from the network.
-
-3. Start the proxy pointing at the remote host:
-   ```
-   wincc-unified-debug-proxy run -t 192.168.1.100
-   ```
-
-4. After a Windows restart on the WinCC machine, re-run `wincc-debug-restart-*.bat` to restore the port proxy rule. To remove everything, run `wincc-debug-cleanup-*.bat`.
-
-## Script Dumping & TypeDefs
-
-Use `--dump` to continuously save runtime scripts to disk as they load:
+Creates `.bat` scripts for netsh port forwarding and firewall rules on the WinCC machine.
 
 ```
-wincc-unified-debug-proxy run --dump ./output
+./wincc-unified-debug-proxy.exe generate --address <IP> [OPTIONS]
 ```
 
-When `--dump` is used, the proxy prompts for your WinCC version (v17-v21) and writes TypeScript definitions, ESLint config, and jsconfig.json into the dump directory. This gives you IntelliSense and linting for WinCC scripts in VS Code. Requires [Node.js](https://nodejs.org/) for ESLint.
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-a, --address` | *required* | WinCC machine IP |
+| `-p, --port` | `9222` | WinCC debug port |
+| `-o, --output` | `.` | Output directory |
 
-## How It Works
+## Documentation
 
-The proxy runs two local WebSocket servers — one for Dynamics (port 9230) and one for Events (port 9231). Both forward Chrome DevTools Protocol (CDP) messages to the WinCC debug server on port 9222.
+Full docs at [ploxc.com/tools/debug-proxy/docs](https://ploxc.com/tools/debug-proxy/docs).
 
-It polls the WinCC `/json` endpoint to detect when script targets change (which happens on every screen navigation). When a change is detected, it tears down the current connections and restarts, forcing VS Code to automatically reconnect via its `"restart": true` launch config.
-
-Script URLs are shortened for readability (e.g. `/screen_modules/Screen_Content/HMI_RT_1::HMI_Screen/faceplate_modules/CM_Freq/Events.js` becomes `HMI_Screen/CM_Freq/Events.js`). Use `-l` to show full paths.
-
-## Building from Source
+## Build from source
 
 Requires [Rust](https://www.rust-lang.org/tools/install).
 
 ```
+git clone https://github.com/ploxc/wincc-unified-debug-proxy.git
+cd wincc-unified-debug-proxy
 cargo build --release
 ```
 
 The binary will be at `target/release/wincc-unified-debug-proxy.exe`.
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
