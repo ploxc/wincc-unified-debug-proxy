@@ -21,12 +21,7 @@ pub fn init_vscode(output_dir: &str, dynamics_port: u16, events_port: u16) -> Re
             "address": "localhost",
             "port": {},
             "restart": true,
-            "timeout": 30000,
-            "sourceMaps": true,
-            "resolveSourceMapLocations": ["**", "!**/node_modules/**"],
-            "skipFiles": ["<node_internals>/**"],
-            "smartStep": true,
-            "pauseForSourceMap": true
+            "timeout": 30000
         }},
         {{
             "type": "node",
@@ -35,12 +30,7 @@ pub fn init_vscode(output_dir: &str, dynamics_port: u16, events_port: u16) -> Re
             "address": "localhost",
             "port": {},
             "restart": true,
-            "timeout": 30000,
-            "sourceMaps": true,
-            "resolveSourceMapLocations": ["**", "!**/node_modules/**"],
-            "skipFiles": ["<node_internals>/**"],
-            "smartStep": true,
-            "pauseForSourceMap": true
+            "timeout": 30000
         }}
     ],
     "compounds": [

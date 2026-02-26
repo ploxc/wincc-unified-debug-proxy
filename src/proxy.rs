@@ -1197,6 +1197,7 @@ pub async fn run_proxy() {
         format!("[{}]", timestamp()).dimmed(),
         "[STOP]".magenta().bold()
     );
+    std::process::exit(0);
 }
 
 #[cfg(test)]
