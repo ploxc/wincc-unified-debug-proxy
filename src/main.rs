@@ -92,13 +92,11 @@ async fn main() {
             very_verbose,
             long_paths,
             dump,
-            styleguide,
         }) => {
-            // If --dump is set but no --styleguide, ask the user
-            let styleguide_version = if dump.is_some() && styleguide.is_none() {
+            let styleguide_version = if dump.is_some() {
                 prompt_styleguide_version()
             } else {
-                styleguide
+                None
             };
 
             let cfg = Configuration::from_run_command(

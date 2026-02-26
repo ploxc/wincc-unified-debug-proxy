@@ -18,7 +18,7 @@ EXAMPLES:
   ./wincc-unified-debug-proxy.exe run -t 192.168.1.100       Connect to remote WinCC
   ./wincc-unified-debug-proxy.exe init                       Create .vscode/launch.json
   ./wincc-unified-debug-proxy.exe generate -a 192.168.1.100  Generate netsh .bat scripts for remote setup
-  ./wincc-unified-debug-proxy.exe run --dump ./output --styleguide v19    Dump scripts + write styleguide"#
+  ./wincc-unified-debug-proxy.exe run --dump ./output    Dump scripts + write styleguide"#
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -95,10 +95,6 @@ pub enum Commands {
         /// Continuously dump runtime scripts to local files as they are loaded
         #[arg(long, default_value = None)]
         dump: Option<String>,
-
-        /// Write styleguide files (.d.ts, .eslintrc.json, etc.) into the dump directory (v17, v18, v19, v20, v21)
-        #[arg(long, default_value = None)]
-        styleguide: Option<String>,
     },
 }
 

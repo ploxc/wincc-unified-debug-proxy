@@ -363,6 +363,49 @@ async fn restart_server(state: SharedState, target_name: &str, old_path: String,
     }
 }
 
+enum TargetChange {
+    Initial { path: String, vcs: u32 },
+    Changed { old: String, new: String, vcs: u32 },
+    None { vcs: u32 },
+}
+
+fn check_target_change(
+    result: Option<(DebugTarget, u32)>,
+    current_path: &Option<String>,
+    target_name: &str,
+    candidate_count: usize,
+) -> TargetChange {
+    let (target, new_vcs) = match result {
+        Some(pair) => pair,
+        None => return TargetChange::None { vcs: 0 },
+    };
+
+    let path = match target.web_socket_debugger_url.split('/').last() {
+        Some(p) if !p.is_empty() => p.to_string(),
+        _ => return TargetChange::None { vcs: new_vcs },
+    };
+
+    if current_path.as_ref() == Some(&path) {
+        return TargetChange::None { vcs: new_vcs };
+    }
+
+    if candidate_count > 1 {
+        log_warn(&format!(
+            "Multiple alive {} targets found ({}), selecting highest VCS number!",
+            target_name, candidate_count
+        ));
+    }
+
+    match current_path {
+        Some(old) => TargetChange::Changed {
+            old: old.clone(),
+            new: path,
+            vcs: new_vcs,
+        },
+        None => TargetChange::Initial { path, vcs: new_vcs },
+    }
+}
+
 async fn update_targets(state: SharedState) {
     log_verbose("--- Target Update Cycle ---");
 
@@ -426,68 +469,68 @@ async fn update_targets(state: SharedState) {
             // Reacquire lock for updates
             let mut state_guard = state.write().await;
 
-            let mut dynamics_restart: Option<(String, String)> = None;
-            let mut events_restart: Option<(String, String)> = None;
+            let dynamics_change = check_target_change(
+                dynamics_result,
+                &state_guard.dynamics_path,
+                "Dynamics",
+                dynamics_count,
+            );
+            let events_change = check_target_change(
+                events_result,
+                &state_guard.events_path,
+                "Events",
+                events_count,
+            );
 
-            // Check Dynamics for changes
-            if let Some((target, new_vcs)) = dynamics_result {
-                state_guard.highest_dynamics_vcs = new_vcs;
-
-                if let Some(path) = target.web_socket_debugger_url.split('/').last() {
-                    let path_str = path.to_string();
-                    if state_guard.dynamics_path.as_ref() != Some(&path_str) {
-                        if dynamics_count > 1 {
-                            log_warn(&format!("Multiple alive Dynamics targets found ({}), selecting highest VCS number!",
-                                dynamics_count));
-                        }
-                        if let Some(old_path) = state_guard.dynamics_path.clone() {
-                            // Real target change
-                            dynamics_restart = Some((old_path, path_str.clone()));
-                        } else {
-                            // Initial discovery
-                            let new_decoded = urlencoding::decode(&path_str)
-                                .unwrap_or_else(|_| path_str.clone().into());
-                            println!(
-                                "{} {} Dynamics target discovered: {}",
-                                format!("[{}]", timestamp()).dimmed(),
-                                "[CONN]".cyan().bold(),
-                                new_decoded
-                            );
-                            state_guard.dynamics_path = Some(path_str.clone());
-                        }
-                    }
+            // Apply Dynamics change
+            let dynamics_restart = match dynamics_change {
+                TargetChange::Initial { path, vcs } => {
+                    state_guard.highest_dynamics_vcs = vcs;
+                    let decoded = urlencoding::decode(&path)
+                        .unwrap_or_else(|_| path.clone().into());
+                    println!(
+                        "{} {} Dynamics target discovered: {}",
+                        format!("[{}]", timestamp()).dimmed(),
+                        "[CONN]".cyan().bold(),
+                        decoded
+                    );
+                    state_guard.dynamics_path = Some(path);
+                    None
                 }
-            }
-
-            // Check Events for changes
-            if let Some((target, new_vcs)) = events_result {
-                state_guard.highest_events_vcs = new_vcs;
-
-                if let Some(path) = target.web_socket_debugger_url.split('/').last() {
-                    let path_str = path.to_string();
-                    if state_guard.events_path.as_ref() != Some(&path_str) {
-                        if events_count > 1 {
-                            log_warn(&format!("Multiple alive Events targets found ({}), selecting highest VCS number!",
-                                events_count));
-                        }
-                        if let Some(old_path) = state_guard.events_path.clone() {
-                            // Real target change
-                            events_restart = Some((old_path, path_str.clone()));
-                        } else {
-                            // Initial discovery
-                            let new_decoded = urlencoding::decode(&path_str)
-                                .unwrap_or_else(|_| path_str.clone().into());
-                            println!(
-                                "{} {} Events target discovered: {}",
-                                format!("[{}]", timestamp()).dimmed(),
-                                "[CONN]".cyan().bold(),
-                                new_decoded
-                            );
-                            state_guard.events_path = Some(path_str.clone());
-                        }
-                    }
+                TargetChange::Changed { old, new, vcs } => {
+                    state_guard.highest_dynamics_vcs = vcs;
+                    Some((old, new))
                 }
-            }
+                TargetChange::None { vcs } => {
+                    if vcs > 0 { state_guard.highest_dynamics_vcs = vcs; }
+                    None
+                }
+            };
+
+            // Apply Events change
+            let events_restart = match events_change {
+                TargetChange::Initial { path, vcs } => {
+                    state_guard.highest_events_vcs = vcs;
+                    let decoded = urlencoding::decode(&path)
+                        .unwrap_or_else(|_| path.clone().into());
+                    println!(
+                        "{} {} Events target discovered: {}",
+                        format!("[{}]", timestamp()).dimmed(),
+                        "[CONN]".cyan().bold(),
+                        decoded
+                    );
+                    state_guard.events_path = Some(path);
+                    None
+                }
+                TargetChange::Changed { old, new, vcs } => {
+                    state_guard.highest_events_vcs = vcs;
+                    Some((old, new))
+                }
+                TargetChange::None { vcs } => {
+                    if vcs > 0 { state_guard.highest_events_vcs = vcs; }
+                    None
+                }
+            };
 
             // Release lock before restarting
             drop(state_guard);
