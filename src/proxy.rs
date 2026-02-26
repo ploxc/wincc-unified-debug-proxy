@@ -1127,31 +1127,38 @@ pub async fn run_proxy() {
 
         println!("   {} Continuous script dump -> {}/", "[+]".green(), dump_dir);
 
-        // Write styleguide files into the dump directory + npm install
+        // Write styleguide files into the dump directory + npm install (background)
         if let Some(ref version) = cfg.styleguide_version {
             match crate::styleguide::write_styleguide(version, dump_dir) {
                 Ok(_) => {
                     println!("   {} Styleguide ({}) written to {}/", "[+]".green(), version, dump_dir);
 
-                    // Run npm install in the dump directory
-                    log("Running npm install...");
-                    match std::process::Command::new("cmd")
-                        .args(["/C", "npm", "install"])
-                        .current_dir(dump_dir)
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::piped())
-                        .status()
-                    {
-                        Ok(status) if status.success() => {
-                            log_success("npm install completed — ESLint ready");
+                    // Run npm install in the background so it doesn't block target polling
+                    let dump_dir_owned = dump_dir.to_string();
+                    tokio::spawn(async move {
+                        log("Running npm install...");
+                        match tokio::task::spawn_blocking(move || {
+                            std::process::Command::new("cmd")
+                                .args(["/C", "npm", "install"])
+                                .current_dir(&dump_dir_owned)
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::piped())
+                                .status()
+                        }).await {
+                            Ok(Ok(status)) if status.success() => {
+                                log_success("npm install completed — ESLint ready");
+                            }
+                            Ok(Ok(_)) => {
+                                log_warn("npm install failed — run it manually in the dump directory");
+                            }
+                            Ok(Err(e)) => {
+                                log_warn(&format!("Could not run npm install: {}", e));
+                            }
+                            Err(e) => {
+                                log_warn(&format!("npm install task failed: {}", e));
+                            }
                         }
-                        Ok(_) => {
-                            log_warn("npm install failed — run it manually in the dump directory");
-                        }
-                        Err(e) => {
-                            log_warn(&format!("Could not run npm install: {}", e));
-                        }
-                    }
+                    });
                 }
                 Err(e) => {
                     log_error(&format!("Failed to write styleguide: {}", e));
