@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "lib": ["es6"],
+    "checkJs": true
+  },
+  "include": ["**/*.js", "ua_rt_device_V21.d.ts"]
+}

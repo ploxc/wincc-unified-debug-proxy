@@ -1,0 +1,15 @@
+{
+  "name": "wincc-unified-styleguide-v19",
+  "version": "1.0.0",
+  "description": "WinCC Unified V19 scripting styleguide (ESLint + TypeScript definitions)",
+  "private": true,
+  "scripts": {
+    "lint": "eslint .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Siemens",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^8.56.0"
+  }
+}
