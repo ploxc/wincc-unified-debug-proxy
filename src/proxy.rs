@@ -150,6 +150,94 @@ fn maybe_rewrite_cdp_message(text: &str) -> String {
 }
 
 // ============================================================================
+// Script Dump
+// ============================================================================
+
+struct ScriptDumper {
+    dump_dir: String,
+    target_dir: &'static str,
+    next_msg_id: u64,
+    pending: std::collections::HashMap<u64, String>,
+    count: u64,
+}
+
+impl ScriptDumper {
+    fn new(dump_dir: String, target_name: &str) -> Self {
+        Self {
+            dump_dir,
+            target_dir: if target_name.contains("Dynamics") { "Dynamics" } else { "Events" },
+            next_msg_id: 900_000,
+            pending: std::collections::HashMap::new(),
+            count: 0,
+        }
+    }
+
+    /// If this is a scriptParsed event, returns a getScriptSource CDP request to send.
+    fn handle_script_parsed(&mut self, parsed: &serde_json::Value) -> Option<String> {
+        if parsed.get("method").and_then(|m| m.as_str()) != Some("Debugger.scriptParsed") {
+            return None;
+        }
+        let params = parsed.get("params")?;
+        let script_id = params.get("scriptId").and_then(|s| s.as_str()).unwrap_or("");
+        let script_url = params.get("url").and_then(|s| s.as_str()).unwrap_or("");
+
+        if script_url.is_empty()
+            || (script_url.starts_with("eval-") && script_url.ends_with(".cdp"))
+        {
+            return None;
+        }
+
+        let safe_url = script_url
+            .replace(':', "_")
+            .replace('*', "_")
+            .replace('?', "_")
+            .replace('"', "_")
+            .replace('<', "_")
+            .replace('>', "_")
+            .replace('|', "_");
+        let file_path = format!("{}/{}/{}", self.dump_dir, self.target_dir, safe_url);
+
+        let request = serde_json::json!({
+            "id": self.next_msg_id,
+            "method": "Debugger.getScriptSource",
+            "params": { "scriptId": script_id }
+        });
+
+        self.pending.insert(self.next_msg_id, file_path);
+        self.next_msg_id += 1;
+
+        Some(request.to_string())
+    }
+
+    /// If this is a response to one of our getScriptSource requests, write to disk.
+    /// Returns true if the message was consumed (should not be forwarded to client).
+    fn handle_response(&mut self, parsed: &serde_json::Value) -> bool {
+        let Some(id) = parsed.get("id").and_then(|id| id.as_u64()) else {
+            return false;
+        };
+        let Some(file_path) = self.pending.remove(&id) else {
+            return false;
+        };
+
+        if let Some(source) = parsed
+            .get("result")
+            .and_then(|r| r.get("scriptSource"))
+            .and_then(|s| s.as_str())
+        {
+            let path = std::path::Path::new(&file_path);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(path, source);
+            self.count += 1;
+            log_verbose(&format!("[DUMP] {}", file_path));
+        }
+
+        true // consumed, don't forward
+    }
+}
+
+// ============================================================================
 // TCP Connectivity Check
 // ============================================================================
 
@@ -753,107 +841,47 @@ async fn handle_websocket(ws: warp::ws::WebSocket, state: SharedState, target_na
 
     // Forward messages from target to client (with CDP rewriting + script dump)
     let target_tx_t2c = target_tx.clone();
-    let target_name_dump = target_name_log.clone();
     let mut target_to_client = tokio::spawn(async move {
-        let mut dump_msg_id: u64 = 900_000;
-        let mut pending_dumps: std::collections::HashMap<u64, String> =
-            std::collections::HashMap::new();
-        let mut dump_count: u64 = 0;
+        let mut dumper = dump_output.map(|dir| ScriptDumper::new(dir, &target_name_t2c));
 
         while let Some(Ok(msg)) = target_rx.next().await {
-            if let Message::Text(text) = msg {
-                log_very_verbose(&format!(
-                    "[{}] Client #{}: Target -> Client ({} bytes)",
-                    target_name_t2c,
-                    client_id,
-                    text.len()
-                ));
+            let Message::Text(text) = msg else { continue };
 
-                // --- Script dump interception ---
-                if let Some(ref dump_dir) = dump_output {
-                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                        // Intercept scriptParsed → request source
-                        if parsed.get("method").and_then(|m| m.as_str())
-                            == Some("Debugger.scriptParsed")
-                        {
-                            if let Some(params) = parsed.get("params") {
-                                let script_id = params
-                                    .get("scriptId")
-                                    .and_then(|s| s.as_str())
-                                    .unwrap_or("");
-                                let script_url = params
-                                    .get("url")
-                                    .and_then(|s| s.as_str())
-                                    .unwrap_or("");
-                                if !script_url.is_empty()
-                                    && !(script_url.starts_with("eval-")
-                                        && script_url.ends_with(".cdp"))
-                                {
-                                    let safe_url = script_url
-                                        .replace(':', "_")
-                                        .replace('*', "_")
-                                        .replace('?', "_")
-                                        .replace('"', "_")
-                                        .replace('<', "_")
-                                        .replace('>', "_")
-                                        .replace('|', "_");
-                                    let target_dir = if target_name_dump.contains("Dynamics") {
-                                        "Dynamics"
-                                    } else {
-                                        "Events"
-                                    };
-                                    let file_path =
-                                        format!("{}/{}/{}", dump_dir, target_dir, safe_url);
+            log_very_verbose(&format!(
+                "[{}] Client #{}: Target -> Client ({} bytes)",
+                target_name_t2c,
+                client_id,
+                text.len()
+            ));
 
-                                    let get_msg = serde_json::json!({
-                                        "id": dump_msg_id,
-                                        "method": "Debugger.getScriptSource",
-                                        "params": { "scriptId": script_id }
-                                    });
-                                    let mut tx = target_tx_t2c.lock().await;
-                                    let _ = tx.send(Message::Text(get_msg.to_string())).await;
-                                    pending_dumps.insert(dump_msg_id, file_path);
-                                    dump_msg_id += 1;
-                                }
-                            }
-                        }
-
-                        // Intercept our getScriptSource responses → write to disk, don't forward
-                        if let Some(id) = parsed.get("id").and_then(|id| id.as_u64()) {
-                            if let Some(file_path) = pending_dumps.remove(&id) {
-                                if let Some(source) = parsed
-                                    .get("result")
-                                    .and_then(|r| r.get("scriptSource"))
-                                    .and_then(|s| s.as_str())
-                                {
-                                    let path = std::path::Path::new(&file_path);
-                                    if let Some(parent) = path.parent() {
-                                        let _ = std::fs::create_dir_all(parent);
-                                    }
-                                    let _ = std::fs::write(path, source);
-                                    dump_count += 1;
-                                    log_verbose(&format!("[DUMP] {}", file_path));
-                                }
-                                continue; // Don't forward our response to VS Code
-                            }
-                        }
+            // --- Script dump interception ---
+            if let Some(ref mut dumper) = dumper {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if let Some(request) = dumper.handle_script_parsed(&parsed) {
+                        let mut tx = target_tx_t2c.lock().await;
+                        let _ = tx.send(Message::Text(request)).await;
+                    }
+                    if dumper.handle_response(&parsed) {
+                        continue;
                     }
                 }
+            }
 
-                // --- Existing CDP rewriting ---
-                let text = maybe_rewrite_cdp_message(&text);
+            // --- Existing CDP rewriting ---
+            let text = maybe_rewrite_cdp_message(&text);
 
-                if client_tx.send(warp::ws::Message::text(text)).await.is_err() {
-                    break;
-                }
+            if client_tx.send(warp::ws::Message::text(text)).await.is_err() {
+                break;
             }
         }
 
-        if dump_count > 0 {
-            log(&format!(
-                "[{}] Client #{}: Dumped {} scripts",
-                target_name_t2c, client_id, dump_count
-            ));
+        if let Some(dumper) = dumper {
+            if dumper.count > 0 {
+                log(&format!(
+                    "[{}] Client #{}: Dumped {} scripts",
+                    target_name_t2c, client_id, dumper.count
+                ));
+            }
         }
     });
 
