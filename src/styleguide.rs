@@ -5,42 +5,42 @@ use std::path::Path;
 // Embedded styleguide assets per version
 mod assets {
     pub mod v17 {
-        pub const DTS: &str = include_str!("../styleguide/v17/ua_rt_device.d.ts");
-        pub const ESLINTRC: &str = include_str!("../styleguide/v17/.eslintrc.json");
-        pub const JSCONFIG: &str = include_str!("../styleguide/v17/jsconfig.json");
-        pub const PACKAGE: &str = include_str!("../styleguide/v17/package.json");
+        pub const DTS: &str = include_str!("../typedefs/v17/ua_rt_device.d.ts");
+        pub const ESLINTRC: &str = include_str!("../typedefs/v17/.eslintrc.json");
+        pub const JSCONFIG: &str = include_str!("../typedefs/v17/jsconfig.json");
+        pub const PACKAGE: &str = include_str!("../typedefs/v17/package.json");
         pub const DTS_FILENAME: &str = "ua_rt_device.d.ts";
     }
 
     pub mod v18 {
-        pub const DTS: &str = include_str!("../styleguide/v18/ua_rt_device_V18.d.ts");
-        pub const ESLINTRC: &str = include_str!("../styleguide/v18/.eslintrc.json");
-        pub const JSCONFIG: &str = include_str!("../styleguide/v18/jsconfig.json");
-        pub const PACKAGE: &str = include_str!("../styleguide/v18/package.json");
+        pub const DTS: &str = include_str!("../typedefs/v18/ua_rt_device_V18.d.ts");
+        pub const ESLINTRC: &str = include_str!("../typedefs/v18/.eslintrc.json");
+        pub const JSCONFIG: &str = include_str!("../typedefs/v18/jsconfig.json");
+        pub const PACKAGE: &str = include_str!("../typedefs/v18/package.json");
         pub const DTS_FILENAME: &str = "ua_rt_device_V18.d.ts";
     }
 
     pub mod v19 {
-        pub const DTS: &str = include_str!("../styleguide/v19/ua_rt_device_V19.d.ts");
-        pub const ESLINTRC: &str = include_str!("../styleguide/v19/.eslintrc.json");
-        pub const JSCONFIG: &str = include_str!("../styleguide/v19/jsconfig.json");
-        pub const PACKAGE: &str = include_str!("../styleguide/v19/package.json");
+        pub const DTS: &str = include_str!("../typedefs/v19/ua_rt_device_V19.d.ts");
+        pub const ESLINTRC: &str = include_str!("../typedefs/v19/.eslintrc.json");
+        pub const JSCONFIG: &str = include_str!("../typedefs/v19/jsconfig.json");
+        pub const PACKAGE: &str = include_str!("../typedefs/v19/package.json");
         pub const DTS_FILENAME: &str = "ua_rt_device_V19.d.ts";
     }
 
     pub mod v20 {
-        pub const DTS: &str = include_str!("../styleguide/v20/ua_rt_device_V20.d.ts");
-        pub const ESLINTRC: &str = include_str!("../styleguide/v20/.eslintrc.json");
-        pub const JSCONFIG: &str = include_str!("../styleguide/v20/jsconfig.json");
-        pub const PACKAGE: &str = include_str!("../styleguide/v20/package.json");
+        pub const DTS: &str = include_str!("../typedefs/v20/ua_rt_device_V20.d.ts");
+        pub const ESLINTRC: &str = include_str!("../typedefs/v20/.eslintrc.json");
+        pub const JSCONFIG: &str = include_str!("../typedefs/v20/jsconfig.json");
+        pub const PACKAGE: &str = include_str!("../typedefs/v20/package.json");
         pub const DTS_FILENAME: &str = "ua_rt_device_V20.d.ts";
     }
 
     pub mod v21 {
-        pub const DTS: &str = include_str!("../styleguide/v21/ua_rt_device_V21.d.ts");
-        pub const ESLINTRC: &str = include_str!("../styleguide/v21/.eslintrc.json");
-        pub const JSCONFIG: &str = include_str!("../styleguide/v21/jsconfig.json");
-        pub const PACKAGE: &str = include_str!("../styleguide/v21/package.json");
+        pub const DTS: &str = include_str!("../typedefs/v21/ua_rt_device_V21.d.ts");
+        pub const ESLINTRC: &str = include_str!("../typedefs/v21/.eslintrc.json");
+        pub const JSCONFIG: &str = include_str!("../typedefs/v21/jsconfig.json");
+        pub const PACKAGE: &str = include_str!("../typedefs/v21/package.json");
         pub const DTS_FILENAME: &str = "ua_rt_device_V21.d.ts";
     }
 }
