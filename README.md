@@ -43,7 +43,7 @@ It polls the WinCC `/json` endpoint to detect target changes. When a target chan
 - **Script dump** — extract all runtime scripts to disk with `--dump` for backup, diffing, or AI-assisted review
 - **ESLint + IntelliSense** — type definitions and linting setup for dumped scripts (v17–v21)
 - **Remote debugging** — generate netsh port forwarding scripts with `generate`
-- **Path shortening** — rewrites verbose script URLs to readable paths (e.g. `HMI_Screen/CM_Freq/Events.js`)
+- **Path shortening** — rewrites verbose script URLs to readable paths (e.g. `HMI_Screen/Pump_Symbol/Events.js`)
 
 ## CLI reference
 
