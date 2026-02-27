@@ -79,7 +79,7 @@
 
         "semi": 0,
         "quotes": 0,
-        "indent": [1, 2],
+        "indent": [1, 2, { "SwitchCase": 1 }],
         "vars-on-top": 0,
         "comma-dangle": 0,
         "eol-last": 0,
