@@ -107,30 +107,16 @@ pub fn write_styleguide(version: &str, output_dir: &str) -> Result<()> {
 
     let abs_base_path = fs::canonicalize(base_path)?;
 
-    let files: Vec<(&str, &str)> = vec![
-        (assets.dts_filename, assets.dts),
-        (".eslintrc.json", assets.eslintrc),
-        ("jsconfig.json", assets.jsconfig),
-        ("package.json", assets.package),
-    ];
+    // Always overwrite these
+    fs::write(abs_base_path.join(assets.dts_filename), assets.dts)?;
+    fs::write(abs_base_path.join("jsconfig.json"), assets.jsconfig)?;
+    fs::write(abs_base_path.join("package.json"), assets.package)?;
 
-    println!(
-        "Writing WinCC Unified {} styleguide to {}",
-        version,
-        abs_base_path.display()
-    );
-
-    for (filename, content) in &files {
-        let path = abs_base_path.join(filename);
-        fs::write(&path, content)?;
-        println!("  Created: {}", path.display());
+    // Only write .eslintrc.json if it doesn't exist yet (user may have customized it)
+    let eslintrc_path = abs_base_path.join(".eslintrc.json");
+    if !eslintrc_path.exists() {
+        fs::write(eslintrc_path, assets.eslintrc)?;
     }
-
-    println!();
-    println!("Next steps:");
-    println!("  1. npm install        (install ESLint)");
-    println!("  2. npx eslint .       (lint your scripts)");
-    println!("  3. Open in VS Code    (IntelliSense via jsconfig.json)");
 
     Ok(())
 }

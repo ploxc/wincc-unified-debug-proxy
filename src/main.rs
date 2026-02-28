@@ -15,6 +15,28 @@ fn has_node() -> bool {
         .unwrap_or(false)
 }
 
+fn detect_styleguide_version(dump_dir: &str) -> Option<String> {
+    let path = std::path::Path::new(dump_dir);
+    if !path.exists() {
+        return None;
+    }
+    let entries = std::fs::read_dir(path).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if let Some(rest) = name.strip_prefix("ua_rt_device_V") {
+            if let Some(num) = rest.strip_suffix(".d.ts") {
+                return Some(format!("v{}", num));
+            }
+        }
+        // v17 has no version suffix
+        if name == "ua_rt_device.d.ts" {
+            return Some("v17".to_string());
+        }
+    }
+    None
+}
+
 fn prompt_styleguide_version() -> Option<String> {
     use std::io::{self, Write};
 
@@ -93,8 +115,9 @@ async fn main() {
             long_paths,
             dump,
         }) => {
-            let styleguide_version = if dump.is_some() {
-                prompt_styleguide_version()
+            let styleguide_version = if let Some(ref dump_dir) = dump {
+                detect_styleguide_version(dump_dir)
+                    .or_else(|| prompt_styleguide_version())
             } else {
                 None
             };

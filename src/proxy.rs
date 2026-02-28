@@ -1071,11 +1071,7 @@ fn clean_dump_scripts(dump_dir: &str) {
     for subdir in ["Dynamics", "Events"] {
         let path = std::path::Path::new(dump_dir).join(subdir);
         if path.exists() {
-            if let Err(e) = std::fs::remove_dir_all(&path) {
-                log_warn(&format!("Could not clean {}: {}", path.display(), e));
-            } else {
-                log(&format!("Cleaned {}/", path.display()));
-            }
+            let _ = std::fs::remove_dir_all(&path);
         }
     }
 }
@@ -1121,44 +1117,19 @@ pub async fn run_proxy() {
     println!("   {} Separate debug sessions for Dynamics & Events", "[+]".green());
     println!("   {} Script path shortening: {}", "[+]".green(),
         if cfg.long_paths { "off (showing full paths)" } else { "on" });
+    // Track whether we need to run npm install after the banner
+    let mut npm_install_dir: Option<String> = None;
+
     if let Some(ref dump_dir) = cfg.dump_output {
-        // Clean old scripts at startup
         clean_dump_scripts(dump_dir);
 
         println!("   {} Continuous script dump -> {}/", "[+]".green(), dump_dir);
 
-        // Write styleguide files into the dump directory + npm install (background)
         if let Some(ref version) = cfg.styleguide_version {
             match crate::styleguide::write_styleguide(version, dump_dir) {
                 Ok(_) => {
                     println!("   {} Styleguide ({}) written to {}/", "[+]".green(), version, dump_dir);
-
-                    // Run npm install in the background so it doesn't block target polling
-                    let dump_dir_owned = dump_dir.to_string();
-                    tokio::spawn(async move {
-                        log("Running npm install...");
-                        match tokio::task::spawn_blocking(move || {
-                            std::process::Command::new("cmd")
-                                .args(["/C", "npm", "install"])
-                                .current_dir(&dump_dir_owned)
-                                .stdout(std::process::Stdio::null())
-                                .stderr(std::process::Stdio::piped())
-                                .status()
-                        }).await {
-                            Ok(Ok(status)) if status.success() => {
-                                log_success("npm install completed — ESLint ready");
-                            }
-                            Ok(Ok(_)) => {
-                                log_warn("npm install failed — run it manually in the dump directory");
-                            }
-                            Ok(Err(e)) => {
-                                log_warn(&format!("Could not run npm install: {}", e));
-                            }
-                            Err(e) => {
-                                log_warn(&format!("npm install task failed: {}", e));
-                            }
-                        }
-                    });
+                    npm_install_dir = Some(dump_dir.to_string());
                 }
                 Err(e) => {
                     log_error(&format!("Failed to write styleguide: {}", e));
@@ -1171,6 +1142,34 @@ pub async fn run_proxy() {
     println!();
     println!("Press {} to stop", "Ctrl+C".yellow().bold());
     println!();
+
+    // Run npm install in the background after the banner is fully printed
+    if let Some(dump_dir_owned) = npm_install_dir {
+        tokio::spawn(async move {
+            log("Running npm install...");
+            match tokio::task::spawn_blocking(move || {
+                std::process::Command::new("cmd")
+                    .args(["/C", "npm", "install"])
+                    .current_dir(&dump_dir_owned)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::piped())
+                    .status()
+            }).await {
+                Ok(Ok(status)) if status.success() => {
+                    log_success("npm install completed — ESLint ready");
+                }
+                Ok(Ok(_)) => {
+                    log_warn("npm install failed — run it manually in the dump directory");
+                }
+                Ok(Err(e)) => {
+                    log_warn(&format!("Could not run npm install: {}", e));
+                }
+                Err(e) => {
+                    log_warn(&format!("npm install task failed: {}", e));
+                }
+            }
+        });
+    }
 
     // Wait for target to be reachable before fetching /json
     wait_for_target_connectivity().await;
